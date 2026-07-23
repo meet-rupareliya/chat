@@ -181,6 +181,20 @@ export default function UserList({ currentUser, selectedUser, onSelectUser }) {
     return new Date(lastSeenAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 
+  function handleDeleteChat(otherUserId) {
+    if (!window.confirm('Are you sure you want to clear this conversation on your side? It will be removed from your chat list.')) return;
+
+    const now = new Date().toISOString();
+    const key = `circl_cleared_${[currentUser.id, otherUserId].sort().join('_')}_by_${currentUser.id}`;
+    localStorage.setItem(key, now);
+
+    if (selectedUser?.id === otherUserId) {
+      onSelectUser(null);
+    }
+
+    loadProfiles();
+  }
+
   const filtered = profiles.filter((p) => {
     const matchesSearch = p.username?.toLowerCase().includes(search.toLowerCase());
     if (!matchesSearch) return false;
@@ -273,9 +287,23 @@ export default function UserList({ currentUser, selectedUser, onSelectUser }) {
                   {formatLastSeen(p.last_seen_at)}
                 </span>
               </div>
-              {unread > 0 && (
-                <span className="unread-badge">{unread > 99 ? '99+' : unread}</span>
-              )}
+              <div className="user-item-actions">
+                {unread > 0 && (
+                  <span className="unread-badge">{unread > 99 ? '99+' : unread}</span>
+                )}
+                <button
+                  className="delete-chat-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteChat(p.id);
+                  }}
+                  title="Delete conversation"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                    <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                  </svg>
+                </button>
+              </div>
             </li>
           );
         })}

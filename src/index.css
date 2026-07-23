@@ -1218,3 +1218,43 @@ form input:focus {
   border-bottom: 1px solid rgba(13, 245, 200, 0.12) !important;
   box-shadow: 0 4px 15px rgba(13, 245, 200, 0.03);
 }
+
+/* ---------- Delete chat button in UserList ---------- */
+.user-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.delete-chat-btn {
+  opacity: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-muted);
+  transition: opacity 0.2s, color 0.2s, transform 0.1s;
+  padding: 4px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.user-item:hover .delete-chat-btn {
+  opacity: 0.6;
+}
+
+.delete-chat-btn:hover {
+  opacity: 1 !important;
+  color: #ff6868;
+  transform: scale(1.1);
+}
+
+@media (max-width: 767px) {
+  .delete-chat-btn {
+    opacity: 0.4;
+  }
+}
