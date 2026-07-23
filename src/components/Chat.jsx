@@ -484,7 +484,12 @@ export default function Chat({ currentUser, otherUser, onBack, initialScrollMess
                 if (prev.some((msg) => msg.id === m.id)) return prev;
                 return [...prev, m];
               });
-              if (m.receiver_id === currentUser.id) {
+              // Only mark as read if the receiver has this chat open AND the tab is visible/focused
+              if (
+                m.receiver_id === currentUser.id &&
+                !document.hidden &&
+                (document.hasFocus() || document.visibilityState === 'visible')
+              ) {
                 supabase.from('messages').update({ is_read: true }).eq('id', m.id).then();
               }
             }
@@ -532,6 +537,31 @@ export default function Chat({ currentUser, otherUser, onBack, initialScrollMess
     if (otherUser) inputRef.current?.focus();
   }, [otherUser?.id]);
 
+  // Mark received messages as read when user returns focus to the tab/window
+  useEffect(() => {
+    if (!otherUser) return;
+
+    const markReadOnFocus = () => {
+      if (!document.hidden && (document.hasFocus() || document.visibilityState === 'visible')) {
+        supabase
+          .from('messages')
+          .update({ is_read: true })
+          .eq('sender_id', otherUser.id)
+          .eq('receiver_id', currentUser.id)
+          .eq('is_read', false)
+          .then();
+      }
+    };
+
+    document.addEventListener('visibilitychange', markReadOnFocus);
+    window.addEventListener('focus', markReadOnFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', markReadOnFocus);
+      window.removeEventListener('focus', markReadOnFocus);
+    };
+  }, [currentUser.id, otherUser?.id]);
+
   // Scroll to bottom on visual viewport resize (keyboard show/hide)
   useEffect(() => {
     if (typeof window === 'undefined' || !window.visualViewport) return;
@@ -555,13 +585,17 @@ export default function Chat({ currentUser, otherUser, onBack, initialScrollMess
 
     if (!error) {
       setMessages(data || []);
-      supabase
-        .from('messages')
-        .update({ is_read: true })
-        .eq('sender_id', otherUser.id)
-        .eq('receiver_id', currentUser.id)
-        .eq('is_read', false)
-        .then();
+      // Only mark received messages as read if the tab is currently visible/focused
+      // This ensures blue ticks only appear when the receiver actually SEES the messages
+      if (!document.hidden && (document.hasFocus() || document.visibilityState === 'visible')) {
+        supabase
+          .from('messages')
+          .update({ is_read: true })
+          .eq('sender_id', otherUser.id)
+          .eq('receiver_id', currentUser.id)
+          .eq('is_read', false)
+          .then();
+      }
     }
   }
 
