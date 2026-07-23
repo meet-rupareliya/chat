@@ -178,3 +178,42 @@ do $$ begin
 exception when others then null;
 end $$;
 
+-- 5. MEDIA SHARING COLUMNS & STORAGE BUCKET
+alter table public.messages add column if not exists media_url text;
+alter table public.messages add column if not exists media_type text;
+alter table public.messages add column if not exists media_name text;
+alter table public.messages add column if not exists media_size bigint;
+alter table public.messages add column if not exists media_duration double precision;
+
+-- Full-text search index on content
+create index if not exists messages_content_fts_idx on public.messages using gin(to_tsvector('english', content));
+
+-- Setup storage bucket for chat-media
+insert into storage.buckets (id, name, public)
+values ('chat-media', 'chat-media', true)
+on conflict (id) do nothing;
+
+-- Drop old storage policies if exist
+drop policy if exists "Media objects are viewable by everyone" on storage.objects;
+drop policy if exists "Authenticated users can upload media" on storage.objects;
+drop policy if exists "Users can delete their own media" on storage.objects;
+
+-- Storage policies:
+-- 1. Anyone can view/select media files if they have the link (public bucket)
+create policy "Media objects are viewable by everyone"
+  on storage.objects for select
+  using (bucket_id = 'chat-media');
+
+-- 2. Authenticated users can insert/upload media files
+create policy "Authenticated users can upload media"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'chat-media');
+
+-- 3. Users can delete their own media files
+create policy "Users can delete their own media"
+  on storage.objects for delete
+  to authenticated
+  using (bucket_id = 'chat-media');
+
+

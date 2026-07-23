@@ -1,7 +1,25 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 
-export default function UserList({ currentUser, selectedUser, onSelectUser }) {
+const escapeRegExp = (string) => {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+
+const highlightSnippet = (content, query) => {
+  if (!query || !content) return content;
+  const parts = content.split(new RegExp(`(${escapeRegExp(query)})`, 'gi'));
+  return parts.map((part, i) =>
+    part.toLowerCase() === query.toLowerCase() ? (
+      <mark key={i} style={{ background: '#facc15', color: '#000', borderRadius: '2px', padding: '0 2px' }}>
+        {part}
+      </mark>
+    ) : (
+      part
+    )
+  );
+};
+
+export default function UserList({ currentUser, selectedUser, onSelectUser, onSelectUserWithMessage }) {
   const [activeTab, setActiveTab] = useState('chats'); // chats, friends, requests
   const [profiles, setProfiles] = useState([]); // active chats users
   const [friends, setFriends] = useState([]);
@@ -9,6 +27,7 @@ export default function UserList({ currentUser, selectedUser, onSelectUser }) {
   const [unreadCounts, setUnreadCounts] = useState({});
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
+  const [messageSearchResults, setMessageSearchResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchLoading, setSearchLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -123,11 +142,12 @@ export default function UserList({ currentUser, selectedUser, onSelectUser }) {
     }
   }, [currentUser.id]);
 
-  // Debounced search logic to query Supabase globally by username
+  // Debounced search logic to query Supabase globally by username & messages by content
   useEffect(() => {
     const query = search.trim();
     if (!query) {
       setSearchResults([]);
+      setMessageSearchResults([]);
       setSearchLoading(false);
       return;
     }
@@ -135,16 +155,67 @@ export default function UserList({ currentUser, selectedUser, onSelectUser }) {
     setSearchLoading(true);
     const delayDebounceFn = setTimeout(async () => {
       try {
-        const { data, error } = await supabase
+        // Query Profiles globally
+        const { data: matchedProfiles, error: profErr } = await supabase
           .from('profiles')
           .select('id, username, display_name, avatar_url, last_seen_at')
           .neq('id', currentUser.id)
           .ilike('username', `%${query}%`)
           .order('username', { ascending: true })
+          .limit(15);
+
+        if (profErr) throw profErr;
+        setSearchResults(matchedProfiles || []);
+
+        // Query Messages globally (involved in conversations with current user)
+        const { data: matchedMsgs, error: msgErr } = await supabase
+          .from('messages')
+          .select('id, content, created_at, sender_id, receiver_id')
+          .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`)
+          .ilike('content', `%${query}%`)
+          .order('created_at', { ascending: false })
           .limit(20);
 
-        if (error) throw error;
-        setSearchResults(data || []);
+        if (msgErr) throw msgErr;
+
+        if (matchedMsgs && matchedMsgs.length > 0) {
+          // Gather distinct user IDs
+          const userIds = new Set();
+          matchedMsgs.forEach((m) => {
+            if (m.sender_id !== currentUser.id) userIds.add(m.sender_id);
+            if (m.receiver_id !== currentUser.id) userIds.add(m.receiver_id);
+          });
+
+          let profilesMap = {};
+          if (userIds.size > 0) {
+            const { data: profileList } = await supabase
+              .from('profiles')
+              .select('id, username, display_name, avatar_url, last_seen_at')
+              .in('id', Array.from(userIds));
+
+            if (profileList) {
+              profileList.forEach((p) => {
+                profilesMap[p.id] = p;
+              });
+            }
+          }
+
+          const mappedMsgs = matchedMsgs.map((m) => {
+            const partnerId = m.sender_id === currentUser.id ? m.receiver_id : m.sender_id;
+            const partnerProfile = profilesMap[partnerId] || { id: partnerId, username: 'user', display_name: 'Circl User' };
+            const senderProfile = m.sender_id === currentUser.id 
+              ? { id: currentUser.id, username: 'me', display_name: 'Me' } 
+              : partnerProfile;
+            return {
+              ...m,
+              partnerProfile,
+              senderProfile,
+            };
+          });
+          setMessageSearchResults(mappedMsgs);
+        } else {
+          setMessageSearchResults([]);
+        }
       } catch (err) {
         console.error('Global search error:', err);
       } finally {
@@ -356,12 +427,13 @@ export default function UserList({ currentUser, selectedUser, onSelectUser }) {
 
       {/* ── Rendering search results if search is active ── */}
       {search && !searchLoading && (
-        <ul className="search-results-list">
-          <li className="search-title muted small" style={{ padding: '8px 18px', fontSize: '12px' }}>
-            Search Results for "{search}"
+        <ul className="search-results-list" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+          {/* People Section */}
+          <li className="search-title muted small" style={{ padding: '8px 18px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600 }}>
+            People matching "@{search}"
           </li>
           {searchResults.length === 0 ? (
-            <p className="muted small" style={{ padding: '16px 18px' }}>No users found matching @{search}</p>
+            <p className="muted small" style={{ padding: '8px 18px 16px', fontSize: '12.5px' }}>No users found matching @{search}</p>
           ) : (
             searchResults.map((p) => {
               const req = friendRequests.find(
@@ -417,6 +489,50 @@ export default function UserList({ currentUser, selectedUser, onSelectUser }) {
                         Chat
                       </button>
                     )}
+                  </div>
+                </li>
+              );
+            })
+          )}
+
+          {/* Messages Section */}
+          <li className="search-title muted small" style={{ padding: '16px 18px 8px', fontSize: '12px', color: 'var(--text-muted)', fontWeight: 600, borderTop: '1px solid rgba(255,255,255,0.04)', marginTop: '12px' }}>
+            Messages matching "{search}"
+          </li>
+          {messageSearchResults.length === 0 ? (
+            <p className="muted small" style={{ padding: '8px 18px 16px', fontSize: '12.5px' }}>No messages found containing "{search}"</p>
+          ) : (
+            messageSearchResults.map((msg) => {
+              const dateStr = new Date(msg.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+              return (
+                <li
+                  key={msg.id}
+                  className="search-msg-item"
+                  onClick={() => {
+                    setSearch('');
+                    onSelectUserWithMessage(msg.partnerProfile, msg.id);
+                  }}
+                  style={{ display: 'flex', gap: '12px', padding: '12px 18px', cursor: 'pointer', transition: 'background 0.2s', borderBottom: '1px solid rgba(255,255,255,0.02)' }}
+                >
+                  <div className="avatar-wrapper">
+                    {msg.senderProfile.avatar_url ? (
+                      <img src={msg.senderProfile.avatar_url} className="avatar-sm" alt="Sender avatar" style={{ objectFit: 'cover' }} />
+                    ) : (
+                      <div className="avatar-sm">{msg.senderProfile.display_name?.[0]?.toUpperCase()}</div>
+                    )}
+                  </div>
+                  <div className="msg-search-details" style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="msg-sender-name" style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-main)' }}>
+                        {msg.senderProfile.display_name}
+                      </span>
+                      <span className="msg-date" style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                        {dateStr}
+                      </span>
+                    </div>
+                    <p className="msg-snippet" style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {highlightSnippet(msg.content, search)}
+                    </p>
                   </div>
                 </li>
               );

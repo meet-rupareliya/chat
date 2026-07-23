@@ -9,6 +9,7 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [initialScrollMessageId, setInitialScrollMessageId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
 
@@ -251,12 +252,25 @@ export default function App() {
         <UserList
           currentUser={profile}
           selectedUser={selectedUser}
-          onSelectUser={setSelectedUser}
+          onSelectUser={(u) => {
+            setSelectedUser(u);
+            setInitialScrollMessageId(null); // clear if clicking general user list
+          }}
+          onSelectUserWithMessage={(u, mid) => {
+            setSelectedUser(u);
+            setInitialScrollMessageId(mid);
+          }}
         />
       </aside>
 
       <main className="main">
-        <Chat currentUser={profile} otherUser={selectedUser} onBack={() => setSelectedUser(null)} />
+        <Chat
+          currentUser={profile}
+          otherUser={selectedUser}
+          onBack={() => setSelectedUser(null)}
+          initialScrollMessageId={initialScrollMessageId}
+          clearInitialScrollMessageId={() => setInitialScrollMessageId(null)}
+        />
       </main>
 
       {showSettings && (
