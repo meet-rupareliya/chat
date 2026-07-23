@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 
 export default function UserList({ currentUser, selectedUser, onSelectUser }) {
@@ -9,22 +9,52 @@ export default function UserList({ currentUser, selectedUser, onSelectUser }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const searchRef = useRef('');
+
+  // Sync search input state to ref so persistent callbacks can access it without triggers
+  useEffect(() => {
+    searchRef.current = search;
+  }, [search]);
+
   const loadProfiles = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const { data, error: err } = await supabase
-      .from('profiles')
-      .select('id, username, last_seen_at')
-      .neq('id', currentUser.id)
-      .order('username', { ascending: true });
+    try {
+      // 1. Fetch conversations involving current user (sender or receiver)
+      const { data: msgs, error: msgErr } = await supabase
+        .from('messages')
+        .select('sender_id, receiver_id')
+        .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`);
 
-    if (err) {
-      console.error('UserList fetch error:', err);
-      setError(err.message);
-    } else {
-      setProfiles(data || []);
+      if (msgErr) throw msgErr;
+
+      const chatUserIds = new Set();
+      msgs?.forEach((m) => {
+        if (m.sender_id !== currentUser.id) chatUserIds.add(m.sender_id);
+        if (m.receiver_id !== currentUser.id) chatUserIds.add(m.receiver_id);
+      });
+
+      if (chatUserIds.size === 0) {
+        setProfiles([]);
+        return;
+      }
+
+      // 2. Fetch profiles of these users
+      const { data: activeProfiles, error: profErr } = await supabase
+        .from('profiles')
+        .select('id, username, last_seen_at')
+        .in('id', Array.from(chatUserIds))
+        .order('username', { ascending: true });
+
+      if (profErr) throw profErr;
+
+      setProfiles(activeProfiles || []);
+    } catch (err) {
+      console.error('loadProfiles error:', err);
+      setError(err.message || 'Could not load conversations');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [currentUser.id]);
 
   const loadUnreadCounts = useCallback(async () => {
@@ -43,43 +73,71 @@ export default function UserList({ currentUser, selectedUser, onSelectUser }) {
     }
   }, [currentUser.id]);
 
+  // Debounced search logic to query Supabase globally
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      const query = search.trim();
+      if (query) {
+        const fetchGlobalSearch = async () => {
+          setLoading(true);
+          setError(null);
+          const { data, error: err } = await supabase
+            .from('profiles')
+            .select('id, username, last_seen_at')
+            .neq('id', currentUser.id)
+            .ilike('username', `%${query}%`)
+            .order('username', { ascending: true });
+
+          if (err) {
+            console.error('Global search error:', err);
+            setError(err.message);
+          } else {
+            setProfiles(data || []);
+          }
+          setLoading(false);
+        };
+        fetchGlobalSearch();
+      } else {
+        // If search is empty, load active profiles
+        loadProfiles();
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [search, loadProfiles, currentUser.id]);
+
   useEffect(() => {
     loadProfiles();
     loadUnreadCounts();
 
-    // Live-update the directory when someone new registers or status changes
+    // Live-update status of existing chat users
     const profileChannel = supabase
       .channel('profiles-directory')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'profiles' },
+        { event: 'UPDATE', schema: 'public', table: 'profiles' },
         (payload) => {
-          if (payload.eventType === 'INSERT') {
-            const p = payload.new;
-            if (p.id === currentUser.id) return; // skip self
-            setProfiles((prev) => {
-              if (prev.some((x) => x.id === p.id)) return prev;
-              return [...prev, p].sort((a, b) => a.username.localeCompare(b.username));
-            });
-          } else if (payload.eventType === 'UPDATE') {
-            setProfiles((prev) =>
-              prev.map((p) => (p.id === payload.new.id ? { ...p, ...payload.new } : p))
-            );
-          } else if (payload.eventType === 'DELETE') {
-            setProfiles((prev) => prev.filter((p) => p.id !== payload.old.id));
-          }
+          setProfiles((prev) =>
+            prev.map((p) => (p.id === payload.new.id ? { ...p, ...payload.new } : p))
+          );
         }
       )
       .subscribe();
 
-    // Live-update unread counts when messages arrive
+    // Live-update chat profiles list and unread counts when messages arrive/send
     const msgChannel = supabase
-      .channel('unread-counts')
+      .channel('messages-sync')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'messages', filter: `receiver_id=eq.${currentUser.id}` },
-        () => {
-          loadUnreadCounts();
+        { event: 'INSERT', schema: 'public', table: 'messages' },
+        (payload) => {
+          const m = payload.new;
+          if (m.sender_id === currentUser.id || m.receiver_id === currentUser.id) {
+            loadUnreadCounts();
+            if (!searchRef.current.trim()) {
+              loadProfiles();
+            }
+          }
         }
       )
       .subscribe();
