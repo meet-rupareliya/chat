@@ -159,6 +159,18 @@ export default function Chat({ currentUser, otherUser, onBack }) {
     if (otherUser) inputRef.current?.focus();
   }, [otherUser?.id]);
 
+  // Scroll to bottom on visual viewport resize (keyboard show/hide)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+    const handleResize = () => {
+      setTimeout(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 80);
+    };
+    window.visualViewport.addEventListener('resize', handleResize);
+    return () => window.visualViewport.removeEventListener('resize', handleResize);
+  }, []);
+
   async function loadMessages() {
     const { data, error } = await supabase
       .from('messages')
