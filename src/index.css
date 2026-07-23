@@ -929,3 +929,91 @@ form input:focus {
   background: rgba(255,255,255,0.08);
   transform: scale(1.2);
 }
+
+/* ---------- Back button ---------- */
+.back-btn {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text-main);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  margin-right: 8px;
+  border-radius: 50%;
+  transition: background 0.2s, transform 0.1s;
+}
+
+.back-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.back-btn:active {
+  transform: scale(0.95);
+}
+
+/* ---------- Responsive Mobile Styles ---------- */
+@media (max-width: 767px) {
+  .back-btn {
+    display: flex;
+  }
+
+  .app-shell {
+    position: relative;
+    width: 100vw;
+    overflow: hidden;
+  }
+
+  /* When chat is active, hide sidebar and show chat main */
+  .app-shell.has-active-chat .sidebar {
+    display: none;
+  }
+  .app-shell.has-active-chat .main {
+    display: flex;
+    width: 100%;
+  }
+
+  /* When chat is not active, show sidebar (at 100% width) and hide chat main */
+  .app-shell:not(.has-active-chat) .sidebar {
+    display: flex;
+    width: 100%;
+  }
+  .app-shell:not(.has-active-chat) .main {
+    display: none;
+  }
+
+  /* Adjust bubble max-width for better use of space */
+  .bubble-wrapper {
+    max-width: 85%;
+  }
+
+  /* Responsive Emoji Picker */
+  .emoji-picker {
+    width: calc(100% - 28px);
+    left: 14px;
+    right: 14px;
+    bottom: 70px;
+  }
+
+  /* Always show delete button on mobile since hover is not available */
+  .msg-delete-btn {
+    opacity: 0.5;
+  }
+
+  /* Auth wrapping optimizations */
+  .auth-card {
+    padding: 30px 20px;
+    margin: 10px;
+  }
+
+  /* Header adjustments for small screens */
+  .me, .chat-header {
+    height: 56px;
+    padding: 8px 12px;
+  }
+  
+  .chat-messages {
+    padding: 15px 15px;
+  }
+}

@@ -99,7 +99,7 @@ export default function App() {
   if (!profile) return <div className="center-msg">Setting up your profile…</div>;
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${selectedUser ? 'has-active-chat' : ''}`}>
       <aside className="sidebar">
         <div className="me">
           <div className="avatar-sm">{profile.username?.[0]?.toUpperCase()}</div>
@@ -119,7 +119,7 @@ export default function App() {
       </aside>
 
       <main className="main">
-        <Chat currentUser={profile} otherUser={selectedUser} />
+        <Chat currentUser={profile} otherUser={selectedUser} onBack={() => setSelectedUser(null)} />
       </main>
     </div>
   );
