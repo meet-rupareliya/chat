@@ -529,6 +529,7 @@ form input:focus {
   flex-direction: column;
   min-height: 0;
   z-index: 1;
+  overflow: hidden;
 }
 
 .chat-header {
@@ -665,6 +666,7 @@ form input:focus {
 .chat-messages {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 20px 24px;
   display: flex;
   flex-direction: column;
