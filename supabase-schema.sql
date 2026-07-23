@@ -112,3 +112,69 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+-- ============================================================
+-- 5. UNIQUE USERNAME, PROFILE SETUP & FRIEND REQUEST SYSTEM
+-- ============================================================
+
+-- Add new columns to public.profiles if they do not exist
+alter table public.profiles add column if not exists display_name text;
+alter table public.profiles add column if not exists avatar_url text;
+alter table public.profiles add column if not exists bio varchar(150);
+alter table public.profiles add column if not exists phone text;
+alter table public.profiles add column if not exists email_visible boolean default false;
+alter table public.profiles add column if not exists username_last_changed_at timestamptz;
+
+-- Create friend_requests table
+create table if not exists public.friend_requests (
+  id uuid primary key default gen_random_uuid(),
+  sender_id uuid references public.profiles (id) on delete cascade not null,
+  receiver_id uuid references public.profiles (id) on delete cascade not null,
+  status text not null check (status in ('pending', 'accepted', 'rejected')),
+  created_at timestamptz default now(),
+  constraint no_self_request check (sender_id <> receiver_id)
+);
+
+-- Unique index to prevent duplicate/spam friend requests (least/greatest ensures one request per pair)
+create unique index if not exists unique_friend_request_pairs
+  on public.friend_requests (least(sender_id, receiver_id), greatest(sender_id, receiver_id));
+
+-- Enable RLS for friend_requests
+alter table public.friend_requests enable row level security;
+
+-- Drop old policies to make re-running this script safe
+drop policy if exists "Users can view their own requests" on public.friend_requests;
+drop policy if exists "Users can insert requests as sender" on public.friend_requests;
+drop policy if exists "Users can update their own requests" on public.friend_requests;
+drop policy if exists "Users can delete their own requests" on public.friend_requests;
+
+-- Request view policy: sender or receiver
+create policy "Users can view their own requests"
+  on public.friend_requests for select
+  to authenticated
+  using (auth.uid() = sender_id or auth.uid() = receiver_id);
+
+-- Request insert policy: sender must be auth user
+create policy "Users can insert requests as sender"
+  on public.friend_requests for insert
+  to authenticated
+  with check (auth.uid() = sender_id);
+
+-- Request update policy: sender or receiver can update (needed to Accept/Reject status)
+create policy "Users can update their own requests"
+  on public.friend_requests for update
+  to authenticated
+  using (auth.uid() = sender_id or auth.uid() = receiver_id);
+
+-- Request delete policy: sender or receiver can delete (needed to Cancel/Reject requests)
+create policy "Users can delete their own requests"
+  on public.friend_requests for delete
+  to authenticated
+  using (auth.uid() = sender_id or auth.uid() = receiver_id);
+
+-- Enable Realtime for friend_requests
+do $$ begin
+  alter publication supabase_realtime add table public.friend_requests;
+exception when others then null;
+end $$;
+

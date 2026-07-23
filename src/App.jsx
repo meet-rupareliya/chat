@@ -3,12 +3,26 @@ import { supabase } from './supabaseClient';
 import Auth from './components/Auth.jsx';
 import UserList from './components/UserList.jsx';
 import Chat from './components/Chat.jsx';
+import ProfileSetup, { SettingsModal } from './components/ProfileSetup.jsx';
 
 export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Capture Invite URL path at startup
+  useEffect(() => {
+    const path = window.location.pathname;
+    const match = path.match(/^\/invite\/([a-zA-Z0-9_.]+)/);
+    if (match) {
+      const userStr = match[1].toLowerCase();
+      localStorage.setItem('pending_invite_username', userStr);
+      // Clean path so browser history looks neat
+      window.history.replaceState({}, '', '/');
+    }
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -64,6 +78,63 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
+  // Handle invite links when user is logged in
+  useEffect(() => {
+    if (!session || !profile || !profile.display_name) return;
+
+    const handlePendingInvite = async () => {
+      const pending = localStorage.getItem('pending_invite_username');
+      if (!pending) return;
+
+      localStorage.removeItem('pending_invite_username');
+
+      if (pending === profile.username?.toLowerCase()) {
+        console.log('Cannot invite yourself.');
+        return;
+      }
+
+      try {
+        // Retrieve inviter profile
+        const { data: inviter, error: invError } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .eq('username', pending)
+          .maybeSingle();
+
+        if (invError) throw invError;
+        if (!inviter) {
+          console.warn('Inviter not found:', pending);
+          return;
+        }
+
+        // Check if friendship or request exists
+        const { data: existing } = await supabase
+          .from('friend_requests')
+          .select('*')
+          .or(`and(sender_id.eq.${profile.id},receiver_id.eq.${inviter.id}),and(sender_id.eq.${inviter.id},receiver_id.eq.${profile.id})`)
+          .maybeSingle();
+
+        if (!existing) {
+          // Automatically send friend request
+          await supabase
+            .from('friend_requests')
+            .insert({
+              sender_id: profile.id,
+              receiver_id: inviter.id,
+              status: 'pending'
+            });
+        }
+
+        // Auto-select user to open request/chat
+        setSelectedUser(inviter);
+      } catch (err) {
+        console.error('Invite handler error:', err);
+      }
+    };
+
+    handlePendingInvite();
+  }, [session, profile]);
+
   useEffect(() => {
     if (!session || !profile) return;
 
@@ -85,31 +156,30 @@ export default function App() {
     document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [session, profile?.id]);
 
-
   async function loadOwnProfile() {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, username')
+      .select('id, username, display_name, avatar_url, bio, phone, email_visible, username_last_changed_at')
       .eq('id', session.user.id)
       .single();
 
     if (!error && data) {
       setProfile(data);
     } else {
-      // Fallback & Ensure profile exists in public.profiles table:
-      // The profile row wasn't created at sign-up time. Since the user is authenticated now, we can write it.
+      // Fallback & Ensure profile exists in public.profiles table
       const fallbackUsername = session.user.user_metadata?.username || session.user.email.split('@')[0];
       const newProfile = { id: session.user.id, username: fallbackUsername };
 
       const { data: upsertedData, error: upsertError } = await supabase
         .from('profiles')
         .upsert(newProfile)
-        .select()
+        .select('id, username, display_name, avatar_url, bio, phone, email_visible, username_last_changed_at')
         .single();
 
       if (!upsertError && upsertedData) {
@@ -130,18 +200,53 @@ export default function App() {
   if (!session) return <Auth />;
   if (!profile) return <div className="center-msg">Setting up your profile…</div>;
 
+  // Redirect to Wizard if Profile display_name is empty
+  if (!profile.display_name) {
+    return <ProfileSetup profile={profile} session={session} onComplete={loadOwnProfile} />;
+  }
+
   return (
     <div className={`app-shell ${selectedUser ? 'has-active-chat' : ''}`}>
       <aside className="sidebar">
         <div className="me">
-          <div className="avatar-sm">{profile.username?.[0]?.toUpperCase()}</div>
-          <div>
-            <strong>{profile.username}</strong>
-            <span className="online-dot" title="Online" />
+          <div className="avatar-wrapper">
+            {profile.avatar_url ? (
+              <img
+                src={profile.avatar_url}
+                className="avatar-sm"
+                alt="My avatar"
+                style={{ objectFit: 'cover' }}
+              />
+            ) : (
+              <div className="avatar-sm">
+                {profile.display_name?.[0]?.toUpperCase() || profile.username?.[0]?.toUpperCase()}
+              </div>
+            )}
+            <span className="status-badge-online" />
           </div>
-          <button className="btn ghost small" onClick={handleLogout}>
-            Log out
-          </button>
+          <div>
+            <strong>{profile.display_name}</strong>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '-2px' }}>
+              @{profile.username}
+            </span>
+          </div>
+          <div className="me-actions" style={{ display: 'flex', gap: '4px' }}>
+            <button
+              className="btn ghost small"
+              onClick={() => setShowSettings(true)}
+              title="Profile Settings"
+              style={{ padding: '6px 10px', fontSize: '13px' }}
+            >
+              ⚙️
+            </button>
+            <button
+              className="btn ghost small"
+              onClick={handleLogout}
+              style={{ padding: '6px 10px', fontSize: '12px' }}
+            >
+              Log out
+            </button>
+          </div>
         </div>
         <UserList
           currentUser={profile}
@@ -153,6 +258,15 @@ export default function App() {
       <main className="main">
         <Chat currentUser={profile} otherUser={selectedUser} onBack={() => setSelectedUser(null)} />
       </main>
+
+      {showSettings && (
+        <SettingsModal
+          profile={profile}
+          session={session}
+          onClose={() => setShowSettings(false)}
+          onSave={loadOwnProfile}
+        />
+      )}
     </div>
   );
 }

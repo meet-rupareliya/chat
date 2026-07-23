@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 
 // ── Emoji data ──────────────────────────────────────────────────────────────
@@ -52,6 +52,7 @@ export default function Chat({ currentUser, otherUser, onBack }) {
   const [emojiTab, setEmojiTab] = useState(0);
   const [clearedAt, setClearedAt] = useState(null);
   const [showClearMenu, setShowClearMenu] = useState(false);
+  const [friendship, setFriendship] = useState(null); // null (checking), 'friends', 'pending_out', 'pending_in', 'none'
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const emojiRef = useRef(null);
@@ -67,6 +68,89 @@ export default function Chat({ currentUser, otherUser, onBack }) {
       });
     }
   };
+
+  const checkFriendshipStatus = useCallback(async () => {
+    if (!otherUser) return;
+    try {
+      const { data, error } = await supabase
+        .from('friend_requests')
+        .select('*')
+        .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${otherUser.id}),and(sender_id.eq.${otherUser.id},receiver_id.eq.${currentUser.id})`)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (!data) {
+        setFriendship('none');
+      } else if (data.status === 'accepted') {
+        setFriendship('friends');
+      } else {
+        setFriendship(data.sender_id === currentUser.id ? 'pending_out' : 'pending_in');
+      }
+    } catch (err) {
+      console.error('Check friendship status error:', err);
+      setFriendship('none');
+    }
+  }, [currentUser.id, otherUser?.id]);
+
+  // Handle friend requests inside chat container
+  async function handleAddFriend() {
+    try {
+      const { error } = await supabase
+        .from('friend_requests')
+        .insert({
+          sender_id: currentUser.id,
+          receiver_id: otherUser.id,
+          status: 'pending'
+        });
+      if (error) throw error;
+      checkFriendshipStatus();
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  async function handleAcceptFriend() {
+    try {
+      const { error } = await supabase
+        .from('friend_requests')
+        .update({ status: 'accepted' })
+        .eq('sender_id', otherUser.id)
+        .eq('receiver_id', currentUser.id);
+      if (error) throw error;
+      checkFriendshipStatus();
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  async function handleRejectOrCancel() {
+    try {
+      const { error } = await supabase
+        .from('friend_requests')
+        .delete()
+        .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${otherUser.id}),and(sender_id.eq.${otherUser.id},receiver_id.eq.${currentUser.id})`);
+      if (error) throw error;
+      checkFriendshipStatus();
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  // Sync friendship state in real-time
+  useEffect(() => {
+    if (!otherUser) return;
+    checkFriendshipStatus();
+
+    const channel = supabase
+      .channel(`friendship-${[currentUser.id, otherUser.id].sort().join('-')}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'friend_requests' }, () => {
+        checkFriendshipStatus();
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, [currentUser.id, otherUser?.id, checkFriendshipStatus]);
 
   // Close emoji picker and clear menu on outside click
   useEffect(() => {
@@ -98,7 +182,7 @@ export default function Chat({ currentUser, otherUser, onBack }) {
     const fetchLatestProfile = async () => {
       const { data } = await supabase
         .from('profiles')
-        .select('id, username, last_seen_at')
+        .select('id, username, display_name, avatar_url, last_seen_at')
         .eq('id', otherUser.id)
         .single();
       if (data) setOtherUserProfile(data);
@@ -316,8 +400,19 @@ export default function Chat({ currentUser, otherUser, onBack }) {
     return (
       <div className="chat-empty">
         <div className="chat-empty-inner">
-          <div className="chat-empty-icon">💬</div>
-          <h2>Welcome to Circl</h2>
+          <div className="chat-empty-icon">
+            <svg viewBox="0 0 24 24" width="64" height="64" style={{ display: 'block' }}>
+              <defs>
+                <linearGradient id="chatEmptyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#ffc542" />
+                  <stop offset="60%" stopColor="#ff5e7e" />
+                  <stop offset="100%" stopColor="#ec4899" />
+                </linearGradient>
+              </defs>
+              <path fill="url(#chatEmptyGrad)" d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/>
+            </svg>
+          </div>
+          <h2>Welcome to Circl<span className="logo-dot" style={{ color: '#ff5e7e', fontWeight: 900 }}>.</span></h2>
           <p>Select a person from the list to start chatting.</p>
         </div>
       </div>
@@ -354,11 +449,26 @@ export default function Chat({ currentUser, otherUser, onBack }) {
               </svg>
             </button>
           )}
-          <div className="avatar-sm">{otherUserProfile?.username?.[0]?.toUpperCase()}</div>
+          <div className="avatar-wrapper">
+            {otherUserProfile?.avatar_url ? (
+              <img
+                src={otherUserProfile.avatar_url}
+                className="avatar-sm"
+                alt="User avatar"
+                style={{ objectFit: 'cover' }}
+              />
+            ) : (
+              <div className="avatar-sm">
+                {otherUserProfile?.display_name?.[0]?.toUpperCase() || otherUserProfile?.username?.[0]?.toUpperCase()}
+              </div>
+            )}
+            {online && <span className="status-badge-online" />}
+          </div>
           <div className="chat-header-info">
-            <strong>{otherUserProfile?.username}</strong>
+            <strong>{otherUserProfile?.display_name || otherUserProfile?.username}</strong>
             <span className={`status-text ${online ? 'online' : ''}`}>
-              {formatLastSeen(otherUserProfile?.last_seen_at)}
+              {online ? 'online' : formatLastSeen(otherUserProfile?.last_seen_at)}
+              {otherUserProfile?.username && ` • @${otherUserProfile.username}`}
             </span>
           </div>
         </div>
@@ -388,6 +498,9 @@ export default function Chat({ currentUser, otherUser, onBack }) {
 
       {/* ── Messages ── */}
       <div className="chat-messages" ref={messagesContainerRef}>
+        <div className="chat-bg-pattern" />
+        <div className="chat-bg-glow-1" />
+        <div className="chat-bg-glow-2" />
         {clearedAt && visibleMessages.length === 0 && (
           <div className="cleared-notice">
             <span>🧹 Chat cleared on your side</span>
@@ -409,12 +522,6 @@ export default function Chat({ currentUser, otherUser, onBack }) {
             <div key={item.key} className={`message-row ${isMine ? 'mine' : 'theirs'}`}>
               <div className="bubble-wrapper">
                 <div className={`bubble ${isMine ? 'mine' : 'theirs'}`}>
-                  {/*
-                    WhatsApp layout trick:
-                    The text and the "tail" (time + ticks) are in the same inline flow.
-                    The tail is an inline-flex block that floats to the end of the last
-                    text line, creating the characteristic WhatsApp time position.
-                  */}
                   <span className="msg-body">
                     {m.content}
                     <span className="msg-tail">
@@ -478,42 +585,81 @@ export default function Chat({ currentUser, otherUser, onBack }) {
         </div>
       )}
 
-      {/* ── Input ── */}
-      <form className="chat-input" onSubmit={sendMessage}>
-        <button
-          type="button"
-          className="emoji-toggle-btn"
-          onClick={() => setShowEmoji((v) => !v)}
-          title="Emoji"
-        >
-          {showEmoji ? '😊' : '😊'}
-        </button>
-        <input
-          ref={inputRef}
-          type="text"
-          placeholder={`Message ${otherUser.username}…`}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          disabled={sending}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') setShowEmoji(false);
-          }}
-        />
-        <button
-          className="send-btn"
-          type="submit"
-          disabled={sending || !text.trim()}
-          title="Send"
-        >
-          {sending ? (
-            <span className="sending-dots">•••</span>
-          ) : (
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-              <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-            </svg>
+      {/* ── Dynamic Input gating based on friendship ── */}
+      {friendship === 'friends' ? (
+        <form className="chat-input" onSubmit={sendMessage}>
+          <button
+            type="button"
+            className="emoji-toggle-btn"
+            onClick={() => setShowEmoji((v) => !v)}
+            title="Emoji"
+          >
+            😊
+          </button>
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder={`Message ${otherUserProfile?.display_name || otherUserProfile?.username || 'user'}…`}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            disabled={sending}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setShowEmoji(false);
+            }}
+          />
+          <button
+            className="send-btn"
+            type="submit"
+            disabled={sending || !text.trim()}
+            title="Send"
+          >
+            {sending ? (
+              <span className="sending-dots">•••</span>
+            ) : (
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+              </svg>
+            )}
+          </button>
+        </form>
+      ) : (
+        <div className="chat-relationship-banner">
+          {friendship === 'none' && (
+            <div className="banner-content">
+              <span>🔒 You must be friends to send messages.</span>
+              <button type="button" className="btn primary small" onClick={handleAddFriend} style={{ fontSize: '11px', padding: '6px 12px' }}>
+                Send Friend Request
+              </button>
+            </div>
           )}
-        </button>
-      </form>
+          {friendship === 'pending_out' && (
+            <div className="banner-content">
+              <span>⏳ Friend request pending. You can chat once they accept.</span>
+              <button type="button" className="btn ghost small" onClick={handleRejectOrCancel} style={{ fontSize: '11px', padding: '6px 10px', color: '#fbbf24', borderColor: 'rgba(251,191,36,0.3)' }}>
+                Cancel Request
+              </button>
+            </div>
+          )}
+          {friendship === 'pending_in' && (
+            <div className="banner-content">
+              <span>👋 Received a friend request from this user.</span>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button type="button" className="btn primary small" onClick={handleAcceptFriend} style={{ fontSize: '11px', padding: '6px 12px' }}>
+                  Accept
+                </button>
+                <button type="button" className="btn ghost small" onClick={handleRejectOrCancel} style={{ fontSize: '11px', padding: '6px 10px', color: '#ff5e7e' }}>
+                  Reject
+                </button>
+              </div>
+            </div>
+          )}
+          {friendship === null && (
+            <div className="banner-content">
+              <span className="spinner-dots">•••</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
