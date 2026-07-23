@@ -56,6 +56,17 @@ export default function Chat({ currentUser, otherUser, onBack }) {
   const inputRef = useRef(null);
   const emojiRef = useRef(null);
   const clearMenuRef = useRef(null);
+  const messagesContainerRef = useRef(null);
+
+  const scrollToBottom = (behavior = 'smooth') => {
+    const el = messagesContainerRef.current;
+    if (el) {
+      el.scrollTo({
+        top: el.scrollHeight,
+        behavior,
+      });
+    }
+  };
 
   // Close emoji picker and clear menu on outside click
   useEffect(() => {
@@ -151,7 +162,7 @@ export default function Chat({ currentUser, otherUser, onBack }) {
 
   // Auto scroll
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollToBottom('smooth');
   }, [messages]);
 
   // Auto focus
@@ -164,7 +175,7 @@ export default function Chat({ currentUser, otherUser, onBack }) {
     if (typeof window === 'undefined' || !window.visualViewport) return;
     const handleResize = () => {
       setTimeout(() => {
-        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+        scrollToBottom('smooth');
       }, 80);
     };
     window.visualViewport.addEventListener('resize', handleResize);
@@ -376,7 +387,7 @@ export default function Chat({ currentUser, otherUser, onBack }) {
       </div>
 
       {/* ── Messages ── */}
-      <div className="chat-messages">
+      <div className="chat-messages" ref={messagesContainerRef}>
         {clearedAt && visibleMessages.length === 0 && (
           <div className="cleared-notice">
             <span>🧹 Chat cleared on your side</span>
