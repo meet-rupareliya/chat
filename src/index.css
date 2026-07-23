@@ -1,22 +1,22 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap');
 
 :root {
-  --bg-gradient: radial-gradient(circle at 50% 50%, #0d0f19 0%, #05060a 100%);
-  --sidebar-bg: rgba(13, 15, 26, 0.75);
-  --chat-bg: #06070b;
-  --header-bg: rgba(20, 23, 38, 0.8);
-  --surface: rgba(30, 41, 59, 0.4);
-  --border: rgba(255, 255, 255, 0.06);
-  --text-main: #f8fafc;
-  --text-muted: #64748b;
-  --accent-teal: #10b981;
+  --bg-gradient: radial-gradient(circle at 50% 50%, #080c14 0%, #030406 100%);
+  --sidebar-bg: rgba(7, 10, 15, 0.8);
+  --chat-bg: #070a0e;
+  --header-bg: rgba(10, 14, 21, 0.85);
+  --surface: rgba(17, 22, 34, 0.5);
+  --border: rgba(255, 255, 255, 0.04);
+  --text-main: #ffffff;
+  --text-muted: #7b889b;
+  --accent-teal: #0df5c8; /* Neon Mint/Teal from mockup */
   --accent-violet: #6366f1;
   --accent-glow: #8b5cf6;
-  --bubble-mine: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  --bubble-theirs: rgba(255, 255, 255, 0.08);
-  --ticks-blue: #38bdf8;
+  --bubble-mine: #0d2d26; /* Dark teal-green own bubbles */
+  --bubble-theirs: #161d22; /* Dark slate-gray other bubbles */
+  --ticks-blue: #0df5c8;
   --error: #ef4444;
-  --info: #10b981;
+  --info: #0df5c8;
 }
 
 * {
@@ -679,14 +679,16 @@ form input:focus {
   background: var(--bubble-mine);
   color: #ffffff;
   border-top-right-radius: 4px;
-  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.25);
+  border: 1px solid rgba(13, 245, 200, 0.06);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
 .bubble.theirs {
   background: var(--bubble-theirs);
   color: #f1f5f9;
   border-top-left-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
 }
 
 /*
@@ -1083,4 +1085,136 @@ form input:focus {
   .chat-messages {
     padding: 15px 15px;
   }
+}
+
+/* ---------- Search wrapper & icon styles ---------- */
+.search-wrapper {
+  position: relative;
+  margin: 14px 16px 8px;
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 24px;
+  padding: 0 14px;
+  transition: all 0.25s ease;
+}
+
+.search-wrapper:focus-within {
+  border-color: rgba(13, 245, 200, 0.35);
+  box-shadow: 0 0 12px rgba(13, 245, 200, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.search-wrapper .search {
+  flex: 1;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 10px 8px !important;
+  margin: 0 !important;
+  font-size: 13px;
+  color: var(--text-main);
+  outline: none;
+}
+
+.search-icon, .filter-settings-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.search-wrapper:focus-within .search-icon {
+  color: var(--accent-teal);
+  opacity: 0.9;
+}
+
+/* ---------- Filter tabs ---------- */
+.filter-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 4px 16px 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.filter-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.filter-tab {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  white-space: nowrap;
+}
+
+.filter-tab:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-main);
+}
+
+.filter-tab.active {
+  background: var(--accent-teal);
+  border-color: var(--accent-teal);
+  color: #070a0f;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(13, 245, 200, 0.25);
+}
+
+/* ---------- Float Navigation Bar ---------- */
+.float-nav {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  background: rgba(13, 17, 29, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 30px;
+  padding: 5px;
+  margin: 8px 16px 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+}
+
+.nav-item {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s ease;
+}
+
+.nav-item:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.nav-item.active {
+  background: var(--accent-teal);
+  color: #070a0f;
+  box-shadow: 0 4px 12px rgba(13, 245, 200, 0.35);
+  transform: scale(1.03);
+}
+
+/* ---------- Mockup header glow strip ---------- */
+.chat-header {
+  border-bottom: 1px solid rgba(13, 245, 200, 0.12) !important;
+  box-shadow: 0 4px 15px rgba(13, 245, 200, 0.03);
+}
+.me {
+  border-bottom: 1px solid rgba(13, 245, 200, 0.12) !important;
+  box-shadow: 0 4px 15px rgba(13, 245, 200, 0.03);
 }

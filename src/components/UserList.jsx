@@ -5,6 +5,7 @@ export default function UserList({ currentUser, selectedUser, onSelectUser }) {
   const [profiles, setProfiles] = useState([]);
   const [unreadCounts, setUnreadCounts] = useState({});
   const [search, setSearch] = useState('');
+  const [filterMode, setFilterMode] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -122,18 +123,54 @@ export default function UserList({ currentUser, selectedUser, onSelectUser }) {
     return new Date(lastSeenAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 
-  const filtered = profiles.filter((p) =>
-    p.username?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = profiles.filter((p) => {
+    const matchesSearch = p.username?.toLowerCase().includes(search.toLowerCase());
+    if (!matchesSearch) return false;
+
+    const online = isOnline(p.last_seen_at);
+    if (filterMode === 'active') return online;
+    if (filterMode === 'unread') return (unreadCounts[p.id] || 0) > 0;
+
+    return true;
+  });
 
   return (
     <div className="user-list">
-      <input
-        className="search"
-        placeholder="Find people…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
+      <div className="search-wrapper">
+        <svg className="search-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+        </svg>
+        <input
+          className="search"
+          placeholder="Search…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <svg className="filter-settings-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+          <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" />
+        </svg>
+      </div>
+
+      <div className="filter-tabs">
+        <button
+          className={`filter-tab ${filterMode === 'all' ? 'active' : ''}`}
+          onClick={() => setFilterMode('all')}
+        >
+          All
+        </button>
+        <button
+          className={`filter-tab ${filterMode === 'active' ? 'active' : ''}`}
+          onClick={() => setFilterMode('active')}
+        >
+          Active
+        </button>
+        <button
+          className={`filter-tab ${filterMode === 'unread' ? 'active' : ''}`}
+          onClick={() => setFilterMode('unread')}
+        >
+          Unread
+        </button>
+      </div>
 
       {loading && <p className="muted small" style={{ padding: '12px 16px' }}>Loading people…</p>}
 
